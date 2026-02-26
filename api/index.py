@@ -1,12 +1,16 @@
 import sys
 import os
+import traceback
 
-# Get root directory
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+try:
+    ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# Add root to Python path
-if ROOT_DIR not in sys.path:
-    sys.path.insert(0, ROOT_DIR)
+    if ROOT_DIR not in sys.path:
+        sys.path.insert(0, ROOT_DIR)
 
-# Now import FastAPI app
-from main import app
+    from main import app  # noqa: F401 — Vercel picks up `app` as the ASGI handler
+
+except Exception as e:
+    print("FULL ERROR:")
+    print(traceback.format_exc())
+    raise e
