@@ -14,3 +14,10 @@ except Exception as e:
     print("FULL ERROR:")
     print(traceback.format_exc())
     raise e
+
+
+# ADD THIS BELOW — SAFE ADDITION
+try:
+    application = app
+except NameError:
+    pass
