@@ -1,7 +1,12 @@
 import sys
 import os
 
-# add project root to path so `main` and `src` are importable
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Get root directory
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-from main import app  # noqa: F401  — Vercel picks up `app` as the ASGI handler
+# Add root to Python path
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+
+# Now import FastAPI app
+from main import app
