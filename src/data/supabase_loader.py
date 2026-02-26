@@ -78,6 +78,24 @@ class SupabaseLoader:
 
         return df
 
+    def list_public_tables(self) -> list[str]:
+        """
+        List available company tables from Supabase via RPC get_all_tables.
+        Returns only public schema table names.
+        """
+        response = self._client.rpc("get_all_tables").execute()
+        data = response.data or []
+        companies = []
+        for row in data:
+            if not isinstance(row, dict):
+                continue
+            if row.get("table_schema") != "public":
+                continue
+            table_name = row.get("table_name")
+            if isinstance(table_name, str) and table_name.strip():
+                companies.append(table_name.strip())
+        return companies
+
     def _export_to_csv(self, df: pd.DataFrame, table_name: str) -> None:
         """Export DataFrame to CSV in the configured export directory."""
         try:
