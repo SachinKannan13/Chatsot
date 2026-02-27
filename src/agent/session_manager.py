@@ -7,7 +7,7 @@ from src.utils.logger import get_logger
 logger = get_logger(__name__)
 
 SESSION_TIMEOUT_HOURS = 2
-MAX_HISTORY = 5
+MAX_HISTORY = 10  # increased from 5 to 10
 
 
 @dataclass
@@ -15,6 +15,7 @@ class ConversationTurn:
     question: str
     answer: str
     question_type: str
+    is_error: bool = False          # True when the answer was an error/failure
     timestamp: datetime = field(default_factory=datetime.utcnow)
 
 
@@ -33,19 +34,41 @@ class SessionState:
     def touch(self) -> None:
         self.last_active = datetime.utcnow()
 
-    def add_turn(self, question: str, answer: str, question_type: str) -> None:
+    def add_turn(
+        self,
+        question: str,
+        answer: str,
+        question_type: str,
+        is_error: bool = False,
+    ) -> None:
         self.conversation_history.append(
             ConversationTurn(
                 question=question,
                 answer=answer,
                 question_type=question_type,
+                is_error=is_error,
             )
         )
-        # Keep only last MAX_HISTORY turns
         if len(self.conversation_history) > MAX_HISTORY:
             self.conversation_history = self.conversation_history[-MAX_HISTORY:]
 
     def get_history_dicts(self) -> list[dict]:
+        """All turns including errors — used for full context."""
+        return [
+            {
+                "question": t.question,
+                "answer": t.answer,
+                "question_type": t.question_type,
+                "is_error": t.is_error,
+            }
+            for t in self.conversation_history
+        ]
+
+    def get_successful_history_dicts(self) -> list[dict]:
+        """
+        Only turns that produced a real answer (no errors).
+        Used for follow-up resolution so errors don't break context.
+        """
         return [
             {
                 "question": t.question,
@@ -53,6 +76,7 @@ class SessionState:
                 "question_type": t.question_type,
             }
             for t in self.conversation_history
+            if not t.is_error
         ]
 
     def switch_company(self, new_company: str) -> None:
@@ -61,7 +85,12 @@ class SessionState:
         self.company_name = new_company
         self.conversation_history = []
         self.awaiting_company = False
-        logger.info("session_company_switch", session=self.session_id, from_company=old, to_company=new_company)
+        logger.info(
+            "session_company_switch",
+            session=self.session_id,
+            from_company=old,
+            to_company=new_company,
+        )
 
 
 class SessionManager:
@@ -82,7 +111,6 @@ class SessionManager:
         return session
 
     def reset(self, session_id: str) -> None:
-        """Fully reset a session (clear state + history)."""
         if session_id in self._sessions:
             del self._sessions[session_id]
         logger.info("session_reset", session_id=session_id)

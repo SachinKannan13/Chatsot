@@ -17,6 +17,7 @@ from src.pipeline.question_classifier import classify_question
 from src.pipeline.sql_executor import SQLExecutionError, build_empty_hint, execute_multiple, merge_results
 from src.pipeline.sql_generator import generate_sql
 from src.pipeline.web_researcher import format_web_context, research_topic
+from src.pipeline.query_preprocessor import correct_query, resolve_followup
 from src.utils.logger import get_logger
 from src.utils.text_utils import sanitize_company_name
 
@@ -202,6 +203,7 @@ async def handle_message(session_id: str, message: str) -> ChatResponse:
     Process an analytical question against the active company dataset.
     """
     steps: list[str] = []
+    original_message = message  # preserve original before any preprocessing
     session = get_session_manager().get_or_create(session_id)
     session_store = get_session(session_id)
 
@@ -244,6 +246,18 @@ async def handle_message(session_id: str, message: str) -> ChatResponse:
             pipeline_steps=steps,
             error=metadata.get("error"),
         )
+
+    # ── Preprocess: correct typos then resolve follow-ups ────────────────────
+    steps.append("correct_query")
+    message, was_corrected = await correct_query(message)
+    if was_corrected:
+        logger.info("query_was_corrected", original=original_message, corrected=message)
+
+    steps.append("resolve_followup")
+    successful_history = session.get_successful_history_dicts()
+    message, was_resolved = await resolve_followup(message, successful_history)
+    if was_resolved:
+        logger.info("query_was_resolved", resolved=message)
 
     steps.append("cache_check")
     query_cache = get_query_cache()
@@ -337,7 +351,14 @@ async def handle_message(session_id: str, message: str) -> ChatResponse:
             response=response,
         )
 
-    session.add_turn(question=message, answer=response, question_type=question_type)
+    # Flag turn as error if result was empty+hint or compose failed
+    is_error_turn = (result_df.empty and bool(hint_msg)) or question_type == "error"
+    session.add_turn(
+        question=original_message,   # store original so history stays readable
+        answer=response,
+        question_type=question_type,
+        is_error=is_error_turn,
+    )
 
     return ChatResponse(
         session_id=session_id,
